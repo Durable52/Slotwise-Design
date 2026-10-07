@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CalendarProvider {
+  NYLAS
+  GOOGLE
+  MICROSOFT
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  name                String
+  slug                String               @unique
+  defaultTimeZone     String               @default("America/New_York")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  calendarConnections CalendarConnection[]
+  appointmentTypes    AppointmentType[]
+  availabilityRules   AvailabilityRule[]
+  bookings            Booking[]
+}
+
+model CalendarConnection {
+  id                 String           @id @default(cuid())
+  userId             String
+  provider           CalendarProvider @default(NYLAS)
+  providerAccountId  String
+  encryptedAccess    String?
+  encryptedRefresh   String?
+  selectedCalendars  Json             @default("[]")
+  connectedAt        DateTime         @default(now())
+  disconnectedAt     DateTime?
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AppointmentType {
+  id                  String             @id @default(cuid())
+  userId              String
+  title               String
+  slug                String
+  description         String
+  location            String
+  durationMinutes     Int
+  bufferBeforeMinutes Int                @default(0)
+  bufferAfterMinutes  Int                @default(0)
+  minimumNoticeMinutes Int               @default(240)
+  active              Boolean            @default(true)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings            Booking[]
+
+  @@unique([userId, slug])
+  @@index([slug])
+}
+
+model AvailabilityRule {
+  id            String  @id @default(cuid())
+  userId        String
+  dayOfWeek     Int
+  startTime     String
+  endTime       String
+  timeZone      String
+  isActive      Boolean @default(true)
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dayOfWeek])
+}
+
+model Booking {
+  id                String           @id @default(cuid())
+  userId            String
+  appointmentTypeId String
+  inviteeName       String
+  inviteeEmail      String
+  inviteeNotes      String?
+  startsAt          DateTime
+  endsAt            DateTime
+  inviteeTimeZone   String
+  status            BookingStatus    @default(CONFIRMED)
+  cancellationToken String           @unique
+  idempotencyKey    String           @unique
+  createdAt         DateTime         @default(now())
+  cancelledAt       DateTime?
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointmentType   AppointmentType  @relation(fields: [appointmentTypeId], references: [id], onDelete: Cascade)
+  externalEvent     ExternalEvent?
+  notifications     Notification[]
+
+  @@index([userId, startsAt])
+  @@index([appointmentTypeId, startsAt])
+}
+
+model ExternalEvent {
+  id              String   @id @default(cuid())
+  bookingId       String   @unique
+  provider        String
+  providerEventId String
+  status          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  booking         Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id                String             @id @default(cuid())
+  bookingId         String
+  kind              String
+  recipientEmail    String
+  providerMessageId String?
+  status            NotificationStatus @default(QUEUED)
+  retryCount        Int                @default(0)
+  lastError         String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  booking           Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([status])
+}
